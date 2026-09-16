@@ -255,16 +255,14 @@ def check_pending_wayl_payment(show_pending_message: bool = False) -> None:
         st.warning(f"تعذّر التحقق من حالة الدفع ({e}). حاول مرة أخرى بعد قليل.")
         return
 
-    # Confirm against Wayl's own status field. Exact value spelling not
-    # fully confirmed against every possible real response (see
-    # wayl_client.py) -- checked case-insensitively against the most likely
-    # candidates, and also checked one level down under "data" in case this
-    # endpoint wraps its fields the same way link-creation does (data.url).
-    # Update this list if a real sandbox payment comes back with a status
-    # string outside this set.
+    # Confirmed against a real sandbox response (2026-09-16): the status
+    # lives at data.status, and its real value is "Complete" (capital C,
+    # no trailing "d") -- confirmed by reading the actual raw response,
+    # not guessed. Kept the other candidates too in case Wayl uses a
+    # different string for a different payment method.
     flat = status.get("data", status) if isinstance(status.get("data"), dict) else status
     raw_status = str(flat.get("status") or flat.get("paymentStatus") or "").strip().lower()
-    if raw_status in ("paid", "completed", "success", "successful"):
+    if raw_status in ("complete", "completed", "paid", "success", "successful"):
         try:
             auth.grant_subscription(email, auth.SUBSCRIPTION_DAYS, plan=pending["plan"])
             auth.clear_pending_wayl_payment(email)
@@ -273,11 +271,6 @@ def check_pending_wayl_payment(show_pending_message: bool = False) -> None:
             st.error(str(e))
     elif show_pending_message:
         st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}. إذا أتممت الدفع للتو، انتظر لحظة ثم حاول مرة أخرى.")
-        # TEMPORARY, remove once a real sandbox payment has confirmed the
-        # exact status field/value -- shows the raw Wayl response so it can
-        # be read directly instead of guessing at field names again.
-        with st.expander("🔧 تفاصيل تقنية (مؤقت، للتشخيص)"):
-            st.json(status)
 
 
 if st.query_params.get("reset_token"):
@@ -457,7 +450,19 @@ with st.sidebar:
                             reference_id=reference_id,
                             amount_iqd=auth.PLAN_PRICES_IQD[sub_plan],
                             label=f"اشتراك {sub_plan} - متخصص أبحاث",
-                            redirection_url=f"{app_url}/?t={st.query_params.get('t', '')}",
+                            # Bare app_url, deliberately no query string --
+                            # real testing showed Wayl appends
+                            # "/?referenceId=...&orderid=..." as a literal
+                            # suffix rather than merging query strings, so
+                            # anything we put here (e.g. a ?t=... session
+                            # token) gets corrupted into garbage on return
+                            # (this is exactly what caused a real sign-out
+                            # bug). The user re-logging in manually after
+                            # payment is an acceptable tradeoff -- the
+                            # pending-payment check is keyed to the account
+                            # by email, not the browser session, so it still
+                            # picks up correctly either way.
+                            redirection_url=app_url,
                             env=WAYL_ENV,
                         )
                     except wayl_client.WaylClientError as e:

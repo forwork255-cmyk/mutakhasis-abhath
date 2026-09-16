@@ -303,6 +303,15 @@ def toggle_star(idx: int) -> None:
         history.set_starred(st.session_state["user_email"], entry["id"], new_starred)
 
 
+def is_owner() -> bool:
+    # Moved here (was previously defined after the sidebar block) -- the
+    # subscribe section below runs at true top-level inside `with
+    # st.sidebar:`, so it needs this defined before that point, same root
+    # cause as the earlier toggle_star() NameError (see ROADMAP.md).
+    owner_email = st.secrets.get("OWNER_EMAIL", "")
+    return bool(owner_email) and st.session_state["user_email"] == owner_email.strip().lower()
+
+
 with st.sidebar:
     st.subheader("سجل البحث")
     if st.button("+ بحث جديد", use_container_width=True, type="primary"):
@@ -508,11 +517,6 @@ with st.sidebar:
 
 
 _OWNER_SENTINEL = 999_999  # effectively unlimited -- the owner only, not regular subscribers
-
-
-def is_owner() -> bool:
-    owner_email = st.secrets.get("OWNER_EMAIL", "")
-    return bool(owner_email) and st.session_state["user_email"] == owner_email.strip().lower()
 
 
 def current_plan() -> str:

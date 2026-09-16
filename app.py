@@ -220,59 +220,56 @@ def show_login_and_signup() -> bool:
 
 
 def _wayl_reference_id(plan: str) -> str:
-    """Encodes the plan directly into the reference id (plan-<name>-<random
-    hex>) so that when Wayl redirects the browser back to this app, the
-    plan a payment was for can be recovered from the referenceId alone --
-    a full-page redirect starts a fresh Streamlit session, so nothing kept
-    only in st.session_state before leaving for checkout survives the trip
-    back."""
     return f"plan-{plan}-{uuid.uuid4().hex[:10]}"
 
 
-def _plan_from_reference_id(reference_id: str) -> str | None:
-    parts = reference_id.split("-")
-    if len(parts) >= 2 and parts[0] == "plan" and parts[1] in auth.PLANS:
-        return parts[1]
-    return None
+def check_pending_wayl_payment(show_pending_message: bool = False) -> None:
+    """
+    Checks whether the logged-in account has a Wayl checkout awaiting
+    confirmation (auth.get_pending_wayl_payment) and, if so, asks Wayl for
+    its real status -- never trusts anything about *how* the user got back
+    to this page, since real testing showed Wayl's redirect appends its own
+    opaque `orderid` (not the referenceId this app generated, despite their
+    docs saying "referenceId... appended"), so the return URL can't be
+    parsed for meaning. The reference id + plan this app needs are instead
+    read back from the account's own Firestore record (see
+    auth.set_pending_wayl_payment), which survives the round trip to a
+    different domain and back, unlike st.session_state.
 
-
-def handle_wayl_return() -> None:
-    """Runs once per page load, right after login is confirmed. If the URL
-    carries a referenceId (Wayl appends this + order identifiers when
-    redirecting back after checkout, per their API docs), checks the real
-    payment status with Wayl -- never trusts the redirect alone, since a
-    redirectionUrl can be visited without actually paying -- and only grants
-    the subscription if Wayl's own status check confirms it."""
-    reference_id = st.query_params.get("referenceId")
-    if not reference_id:
+    Called on every page load (cheap: a no-op read when there's nothing
+    pending) AND from the manual "تحقق من الدفع" button -- same function,
+    same logic, so the two paths can't drift apart.
+    """
+    email = st.session_state["user_email"]
+    pending = auth.get_pending_wayl_payment(email)
+    if not pending:
         return
 
-    plan = _plan_from_reference_id(reference_id)
     api_key = st.secrets.get("WAYL_API_KEY", "")
-    if not plan or not api_key:
-        st.query_params.pop("referenceId", None)
+    if not api_key:
         return
 
     try:
-        status = wayl_client.get_payment_status(api_key, reference_id)
+        status = wayl_client.get_payment_status(api_key, pending["reference_id"])
     except wayl_client.WaylClientError as e:
-        st.warning(f"تعذّر التحقق من حالة الدفع تلقائياً ({e}). يمكنك المحاولة يدوياً من الشريط الجانبي.")
+        st.warning(f"تعذّر التحقق من حالة الدفع ({e}). حاول مرة أخرى بعد قليل.")
         return
 
-    # Confirm against Wayl's own status field. Value spelling not yet
-    # confirmed against a real response (see wayl_client.py) -- checked
-    # case-insensitively against the most likely candidates, and this
-    # comment stays until a real sandbox payment confirms the exact string.
+    # Confirm against Wayl's own status field. Exact value spelling not
+    # fully confirmed against every possible real response (see
+    # wayl_client.py) -- checked case-insensitively against the most likely
+    # candidates. Update this list if a real sandbox payment comes back
+    # with a status string outside this set.
     raw_status = str(status.get("status", "")).strip().lower()
     if raw_status in ("paid", "completed", "success", "successful"):
         try:
-            auth.grant_subscription(st.session_state["user_email"], auth.SUBSCRIPTION_DAYS, plan=plan)
-            st.success(f"تم تفعيل اشتراكك ({plan}) بنجاح!")
+            auth.grant_subscription(email, auth.SUBSCRIPTION_DAYS, plan=pending["plan"])
+            auth.clear_pending_wayl_payment(email)
+            st.success(f"تم تفعيل اشتراكك ({pending['plan']}) بنجاح!")
         except auth.AuthError as e:
             st.error(str(e))
-    else:
-        st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}. إذا أتممت الدفع للتو، انتظر لحظة ثم أعد التحقق من الشريط الجانبي.")
-    st.query_params.pop("referenceId", None)
+    elif show_pending_message:
+        st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}. إذا أتممت الدفع للتو، انتظر لحظة ثم حاول مرة أخرى.")
 
 
 if st.query_params.get("reset_token"):
@@ -282,7 +279,7 @@ if st.query_params.get("reset_token"):
 if not show_login_and_signup():
     st.stop()
 
-handle_wayl_return()
+check_pending_wayl_payment()
 
 # Search history: a list of {"question": str, "stages": dict}, loaded once
 # per browser session from Firestore (history.py) so it follows the logged-in
@@ -452,39 +449,26 @@ with st.sidebar:
                             reference_id=reference_id,
                             amount_iqd=auth.PLAN_PRICES_IQD[sub_plan],
                             label=f"اشتراك {sub_plan} - متخصص أبحاث",
-                            redirection_url=app_url,
+                            redirection_url=f"{app_url}/?t={st.query_params.get('t', '')}",
                             env=WAYL_ENV,
                         )
                     except wayl_client.WaylClientError as e:
                         st.error(f"تعذّر إنشاء رابط الدفع: {e}")
                     else:
-                        st.session_state["_pending_wayl_ref"] = reference_id
+                        # Saved to Firestore, NOT st.session_state -- the
+                        # checkout page is a different domain, and coming
+                        # back from it starts a fresh Streamlit session
+                        # server-side, wiping session_state. See
+                        # check_pending_wayl_payment() for why.
+                        auth.set_pending_wayl_payment(st.session_state["user_email"], reference_id, sub_plan)
                         st.link_button("افتح صفحة الدفع", payment_url, use_container_width=True, type="primary")
                         st.caption("بعد إتمام الدفع، ستعود تلقائياً إلى هذا التطبيق وسيُفعَّل اشتراكك.")
 
-                # Manual fallback -- covers the case where the automatic
-                # redirect back doesn't fire for some reason. Only checks
-                # the reference id created in THIS session (a fresh page
-                # load after a real redirect is handled automatically by
-                # handle_wayl_return() instead).
-                pending_ref = st.session_state.get("_pending_wayl_ref")
-                if pending_ref and st.button("تحقق من الدفع", key="wayl_manual_check"):
-                    plan = _plan_from_reference_id(pending_ref)
-                    try:
-                        status = wayl_client.get_payment_status(api_key, pending_ref)
-                    except wayl_client.WaylClientError as e:
-                        st.error(f"تعذّر التحقق: {e}")
-                    else:
-                        raw_status = str(status.get("status", "")).strip().lower()
-                        if plan and raw_status in ("paid", "completed", "success", "successful"):
-                            try:
-                                auth.grant_subscription(st.session_state["user_email"], auth.SUBSCRIPTION_DAYS, plan=plan)
-                                st.success(f"تم تفعيل اشتراكك ({plan}) بنجاح!")
-                                st.session_state.pop("_pending_wayl_ref", None)
-                            except auth.AuthError as e:
-                                st.error(str(e))
-                        else:
-                            st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}.")
+                # Manual fallback -- same check the automatic per-page-load
+                # call runs, just triggered on demand and willing to say
+                # "still pending" out loud instead of staying quiet.
+                if auth.get_pending_wayl_payment(st.session_state["user_email"]) and st.button("تحقق من الدفع", key="wayl_manual_check"):
+                    check_pending_wayl_payment(show_pending_message=True)
 
     # Owner-only panel: manually grant subscription access to an account
     # after the owner has received payment outside the app (bank transfer,

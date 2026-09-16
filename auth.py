@@ -355,3 +355,44 @@ def grant_subscription(email: str, days: int, plan: str = "normal") -> None:
         "subscription_used": 0,
         "plan": plan,
     }, merge=True)
+
+
+def set_pending_wayl_payment(email: str, reference_id: str, plan: str) -> None:
+    """
+    Records a Wayl checkout that was just started, BEFORE the user is sent
+    to Wayl's hosted checkout page. Needed because leaving this app for a
+    different domain (Wayl's checkout) and coming back starts a fresh
+    Streamlit session server-side -- st.session_state from before the trip
+    does not survive it. Storing this on the account document (not
+    session_state) is what lets the return trip know which reference id and
+    plan to check, regardless of what Wayl's own redirect happens to append
+    to the URL (found via real testing to be an opaque `orderid` value, not
+    the referenceId this app generated -- so the URL itself can't be relied
+    on for this).
+    """
+    email = email.strip().lower()
+    _accounts().document(email).set({
+        "pending_wayl_reference": reference_id,
+        "pending_wayl_plan": plan,
+    }, merge=True)
+
+
+def get_pending_wayl_payment(email: str) -> dict | None:
+    """Returns {"reference_id": ..., "plan": ...} if this account has a
+    Wayl checkout awaiting confirmation, else None."""
+    account = get_account(email)
+    if not account:
+        return None
+    reference_id = account.get("pending_wayl_reference")
+    plan = account.get("pending_wayl_plan")
+    if not reference_id or plan not in PLANS:
+        return None
+    return {"reference_id": reference_id, "plan": plan}
+
+
+def clear_pending_wayl_payment(email: str) -> None:
+    email = email.strip().lower()
+    _accounts().document(email).set({
+        "pending_wayl_reference": firestore.DELETE_FIELD,
+        "pending_wayl_plan": firestore.DELETE_FIELD,
+    }, merge=True)

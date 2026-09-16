@@ -565,6 +565,43 @@ with st.sidebar:
                 except auth.AuthError as e:
                     st.error(str(e))
 
+    # Feedback/bug-report channel -- sends a real email to the owner via the
+    # same Gmail SMTP setup already used for password reset, rather than
+    # just displaying an address for the user to copy manually.
+    st.divider()
+    with st.expander("📩 الملاحظات والاقتراحات"):
+        feedback_to = st.secrets.get("OWNER_EMAIL", "forwork255@gmail.com")
+        st.text_input("إلى", value=feedback_to, disabled=True, key="feedback_to_display")
+        feedback_text = st.text_area(
+            "صف المشكلة أو الاقتراح", key="feedback_text", height=150,
+            placeholder="اكتب هنا ملاحظتك أو المشكلة التي واجهتها بالتفصيل...",
+        )
+        feedback_image = st.file_uploader(
+            "إرفاق صورة (اختياري)", type=["png", "jpg", "jpeg"], key="feedback_image",
+        )
+        if st.button("إرسال", key="feedback_send", type="primary"):
+            gmail_address = st.secrets.get("GMAIL_ADDRESS", "")
+            gmail_app_password = st.secrets.get("GMAIL_APP_PASSWORD", "")
+            if not feedback_text.strip():
+                st.error("يرجى كتابة وصف للمشكلة أو الاقتراح أولاً.")
+            elif not gmail_address or not gmail_app_password:
+                st.error("إرسال البريد غير مُفعّل حالياً. يرجى مراجعة المالك.")
+            else:
+                try:
+                    email_sender.send_feedback_email(
+                        gmail_address=gmail_address,
+                        gmail_app_password=gmail_app_password,
+                        to_email=feedback_to,
+                        from_user_email=st.session_state["user_email"],
+                        message_text=feedback_text.strip(),
+                        image_bytes=feedback_image.getvalue() if feedback_image else None,
+                        image_filename=feedback_image.name if feedback_image else None,
+                    )
+                except email_sender.EmailSendError:
+                    st.error("تعذّر إرسال الرسالة. يرجى المحاولة لاحقاً.")
+                else:
+                    st.success("تم إرسال ملاحظتك، شكراً لك!")
+
     st.divider()
     if st.button("تسجيل الخروج", use_container_width=True):
         auth.clear_session_token(st.session_state["user_email"])

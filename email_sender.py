@@ -12,6 +12,7 @@ Required Streamlit secrets:
 
 import html
 import smtplib
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -68,3 +69,49 @@ def send_password_reset_email(gmail_address: str, gmail_app_password: str, to_em
             server.sendmail(gmail_address, [to_email], message.as_string())
     except Exception as error:
         raise EmailSendError(f"Failed to send password reset email: {error}") from error
+
+
+def send_feedback_email(
+    gmail_address: str,
+    gmail_app_password: str,
+    to_email: str,
+    from_user_email: str,
+    message_text: str,
+    image_bytes: bytes | None = None,
+    image_filename: str | None = None,
+) -> None:
+    """Sends a user's feedback/bug report to the owner's inbox, optionally
+    with one attached image. Reuses the same Gmail SMTP setup as password
+    reset -- no new secret, no new vendor."""
+    escaped_from = html.escape(from_user_email, quote=True)
+    escaped_message = html.escape(message_text, quote=True).replace("\n", "<br>")
+
+    plain_body = f"ملاحظة جديدة من: {from_user_email}\n\n{message_text}"
+    html_body = f"""\
+<html dir="rtl" lang="ar"><body style="font-family: Arial, sans-serif; text-align: right;">
+<p><b>من:</b> {escaped_from}</p>
+<p><b>الرسالة:</b></p>
+<p>{escaped_message}</p>
+</body></html>"""
+
+    message = MIMEMultipart("mixed")
+    message["Subject"] = f"ملاحظات واقتراحات -- متخصص أبحاث ({from_user_email})"
+    message["From"] = gmail_address
+    message["To"] = to_email
+
+    alt_part = MIMEMultipart("alternative")
+    alt_part.attach(MIMEText(plain_body, "plain", _charset="utf-8"))
+    alt_part.attach(MIMEText(html_body, "html", _charset="utf-8"))
+    message.attach(alt_part)
+
+    if image_bytes:
+        image_part = MIMEImage(image_bytes, name=image_filename or "attachment.png")
+        image_part["Content-Disposition"] = f'attachment; filename="{image_filename or "attachment.png"}"'
+        message.attach(image_part)
+
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.login(gmail_address, gmail_app_password)
+            server.sendmail(gmail_address, [to_email], message.as_string())
+    except Exception as error:
+        raise EmailSendError(f"Failed to send feedback email: {error}") from error

@@ -71,10 +71,17 @@ def create_payment_link(
     use env="test" until a real end-to-end sandbox payment has been
     verified; switch to "live" only after that.
 
-    webhookUrl/webhookSecret are deliberately omitted -- this app has no way
-    to receive an incoming webhook (Streamlit can't expose a custom HTTP
-    endpoint), so it relies on redirection_url + polling (check_payment_status)
-    instead. See the Wayl integration plan for why.
+    webhookUrl/webhookSecret turned out to be REQUIRED fields (confirmed by
+    a real 422 from Wayl during testing -- they are not optional the way
+    the initial plan assumed). Since this app has no way to receive an
+    incoming webhook (Streamlit can't expose a custom HTTP endpoint), a
+    harmless placeholder is sent instead: redirection_url itself as the
+    webhookUrl (a real, reachable URL, just not one that does anything with
+    the POST it'll receive) and a fixed placeholder secret. This is safe
+    specifically BECAUSE nothing here ever reads or verifies that webhook --
+    the app relies entirely on redirection_url + polling
+    (check_payment_status) for the real payment confirmation, per the Wayl
+    integration plan.
     """
     body = {
         "env": env,
@@ -86,6 +93,8 @@ def create_payment_link(
             {"label": label, "amount": amount_iqd, "type": "increase"},
         ],
         "redirectionUrl": redirection_url,
+        "webhookUrl": redirection_url,
+        "webhookSecret": "unused-not-verified",
     }
     result = _request("POST", "/links", api_key, body)
     try:

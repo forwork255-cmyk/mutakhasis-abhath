@@ -19,6 +19,7 @@ Run with: streamlit run app.py
 import base64
 import os
 import re
+import uuid
 
 import streamlit as st
 import sentry_sdk
@@ -31,6 +32,7 @@ import moderation
 import paper_analysis
 import general_qa
 import email_sender
+import wayl_client
 from pipeline_runner import run_pipeline, expand_selection, answer_followup, research_followup, draft_writing, PipelineError
 from model_client import ModelClientError
 
@@ -45,6 +47,13 @@ st.set_page_config(page_title="متخصص أبحاث", page_icon="📚", layout=
 _sentry_dsn = st.secrets.get("SENTRY_DSN", "")
 if _sentry_dsn:
     sentry_sdk.init(dsn=_sentry_dsn, send_default_pii=False)
+
+# "test" until a real sandbox payment has been verified end-to-end, then
+# switched to "live" via this secret -- never hardcoded to "live", so a
+# forgotten step can't accidentally start charging real money. Same
+# WAYL_API_KEY works for both; env is a body field on Wayl's side, not a
+# separate key (see wayl_client.py).
+WAYL_ENV = st.secrets.get("WAYL_ENV", "test")
 
 
 def _read_legal_doc(filename: str) -> str:
@@ -210,12 +219,70 @@ def show_login_and_signup() -> bool:
     return False
 
 
+def _wayl_reference_id(plan: str) -> str:
+    """Encodes the plan directly into the reference id (plan-<name>-<random
+    hex>) so that when Wayl redirects the browser back to this app, the
+    plan a payment was for can be recovered from the referenceId alone --
+    a full-page redirect starts a fresh Streamlit session, so nothing kept
+    only in st.session_state before leaving for checkout survives the trip
+    back."""
+    return f"plan-{plan}-{uuid.uuid4().hex[:10]}"
+
+
+def _plan_from_reference_id(reference_id: str) -> str | None:
+    parts = reference_id.split("-")
+    if len(parts) >= 2 and parts[0] == "plan" and parts[1] in auth.PLANS:
+        return parts[1]
+    return None
+
+
+def handle_wayl_return() -> None:
+    """Runs once per page load, right after login is confirmed. If the URL
+    carries a referenceId (Wayl appends this + order identifiers when
+    redirecting back after checkout, per their API docs), checks the real
+    payment status with Wayl -- never trusts the redirect alone, since a
+    redirectionUrl can be visited without actually paying -- and only grants
+    the subscription if Wayl's own status check confirms it."""
+    reference_id = st.query_params.get("referenceId")
+    if not reference_id:
+        return
+
+    plan = _plan_from_reference_id(reference_id)
+    api_key = st.secrets.get("WAYL_API_KEY", "")
+    if not plan or not api_key:
+        st.query_params.pop("referenceId", None)
+        return
+
+    try:
+        status = wayl_client.get_payment_status(api_key, reference_id)
+    except wayl_client.WaylClientError as e:
+        st.warning(f"تعذّر التحقق من حالة الدفع تلقائياً ({e}). يمكنك المحاولة يدوياً من الشريط الجانبي.")
+        return
+
+    # Confirm against Wayl's own status field. Value spelling not yet
+    # confirmed against a real response (see wayl_client.py) -- checked
+    # case-insensitively against the most likely candidates, and this
+    # comment stays until a real sandbox payment confirms the exact string.
+    raw_status = str(status.get("status", "")).strip().lower()
+    if raw_status in ("paid", "completed", "success", "successful"):
+        try:
+            auth.grant_subscription(st.session_state["user_email"], auth.SUBSCRIPTION_DAYS, plan=plan)
+            st.success(f"تم تفعيل اشتراكك ({plan}) بنجاح!")
+        except auth.AuthError as e:
+            st.error(str(e))
+    else:
+        st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}. إذا أتممت الدفع للتو، انتظر لحظة ثم أعد التحقق من الشريط الجانبي.")
+    st.query_params.pop("referenceId", None)
+
+
 if st.query_params.get("reset_token"):
     show_reset_password_form()
     st.stop()
 
 if not show_login_and_signup():
     st.stop()
+
+handle_wayl_return()
 
 # Search history: a list of {"question": str, "stages": dict}, loaded once
 # per browser session from Firestore (history.py) so it follows the logged-in
@@ -348,6 +415,67 @@ with st.sidebar:
                 st.success("تم حفظ الملف الشخصي.")
             except auth.AuthError as e:
                 st.error(str(e))
+
+    # Real Wayl checkout -- shown to any account that isn't already
+    # subscribed and isn't the owner (owner has unlimited access via
+    # is_owner(), never needs to pay). Replaces the old fully-manual "pay
+    # the owner outside the app" flow with a real self-serve link; the
+    # owner's manual-grant panel just below stays as a fallback for
+    # edge cases (e.g. a subscriber who paid a different way).
+    _account_for_sub = auth.get_account(st.session_state["user_email"])
+    if _account_for_sub and not auth.is_subscribed(_account_for_sub) and not is_owner():
+        st.divider()
+        with st.expander("💳 الاشتراك", expanded=False):
+            api_key = st.secrets.get("WAYL_API_KEY", "")
+            app_url = st.secrets.get("APP_URL", "").rstrip("/")
+            if not api_key or not app_url:
+                st.caption("الدفع الإلكتروني غير مُفعّل بعد. يرجى مراجعة المالك.")
+            else:
+                sub_plan = st.selectbox(
+                    "اختر خطة", options=list(auth.PLANS), key="sub_plan_choice",
+                    format_func=lambda p: f"{p} — {auth.PLAN_PRICES_IQD[p]:,} د.ع/شهرياً",
+                )
+                if st.button("ادفع الآن", key="wayl_pay_button", type="primary"):
+                    reference_id = _wayl_reference_id(sub_plan)
+                    try:
+                        payment_url = wayl_client.create_payment_link(
+                            api_key=api_key,
+                            reference_id=reference_id,
+                            amount_iqd=auth.PLAN_PRICES_IQD[sub_plan],
+                            label=f"اشتراك {sub_plan} - متخصص أبحاث",
+                            redirection_url=app_url,
+                            env=WAYL_ENV,
+                        )
+                    except wayl_client.WaylClientError as e:
+                        st.error(f"تعذّر إنشاء رابط الدفع: {e}")
+                    else:
+                        st.session_state["_pending_wayl_ref"] = reference_id
+                        st.link_button("افتح صفحة الدفع", payment_url, use_container_width=True, type="primary")
+                        st.caption("بعد إتمام الدفع، ستعود تلقائياً إلى هذا التطبيق وسيُفعَّل اشتراكك.")
+
+                # Manual fallback -- covers the case where the automatic
+                # redirect back doesn't fire for some reason. Only checks
+                # the reference id created in THIS session (a fresh page
+                # load after a real redirect is handled automatically by
+                # handle_wayl_return() instead).
+                pending_ref = st.session_state.get("_pending_wayl_ref")
+                if pending_ref and st.button("تحقق من الدفع", key="wayl_manual_check"):
+                    plan = _plan_from_reference_id(pending_ref)
+                    try:
+                        status = wayl_client.get_payment_status(api_key, pending_ref)
+                    except wayl_client.WaylClientError as e:
+                        st.error(f"تعذّر التحقق: {e}")
+                    else:
+                        raw_status = str(status.get("status", "")).strip().lower()
+                        if plan and raw_status in ("paid", "completed", "success", "successful"):
+                            try:
+                                auth.grant_subscription(st.session_state["user_email"], auth.SUBSCRIPTION_DAYS, plan=plan)
+                                st.success(f"تم تفعيل اشتراكك ({plan}) بنجاح!")
+                                st.session_state.pop("_pending_wayl_ref", None)
+                            except auth.AuthError as e:
+                                st.error(str(e))
+                        else:
+                            st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}.")
 
     # Owner-only panel: manually grant subscription access to an account
     # after the owner has received payment outside the app (bank transfer,

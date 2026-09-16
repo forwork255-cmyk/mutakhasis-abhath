@@ -102,6 +102,18 @@ SUBSCRIPTION_SEARCH_LIMITS = {
     "max": 20,
 }
 
+# Monthly price per plan, in IQD -- see ROADMAP.md for the pricing research
+# behind these numbers. Used by wayl_client.py / app.py to create a real
+# checkout link; kept here alongside the other plan metadata rather than in
+# app.py so the price and the plan it belongs to never drift apart.
+PLAN_PRICES_IQD = {
+    "normal": 6000,
+    "pro": 7000,
+    "max": 8500,
+}
+
+SUBSCRIPTION_DAYS = 30  # one paid period -- see grant_subscription() below
+
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 

@@ -20,9 +20,11 @@ import base64
 import os
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 import sentry_sdk
+import extra_streamlit_components as stx
 
 import run_assistant as backend
 import auth
@@ -54,6 +56,21 @@ if _sentry_dsn:
 # WAYL_API_KEY works for both; env is a body field on Wayl's side, not a
 # separate key (see wayl_client.py).
 WAYL_ENV = st.secrets.get("WAYL_ENV", "test")
+
+
+@st.fragment
+def _get_cookie_manager():
+    return stx.CookieManager()
+
+
+# A real browser cookie, not a URL query param -- a URL can be copied to a
+# different browser (or sent to someone else) and silently transfer login
+# access, since anyone holding the URL held the token. A cookie is scoped
+# to the actual browser it was set in, closing that gap. Uses
+# extra-streamlit-components since Streamlit's own built-in auth
+# (st.login/st.logout) only supports real OIDC providers (Google,
+# Microsoft, etc.), not a custom email/password system like this one's.
+cookie_manager = _get_cookie_manager()
 
 
 def _read_legal_doc(filename: str) -> str:
@@ -111,12 +128,17 @@ def show_reset_password_form() -> None:
 
 def _start_session(email: str) -> None:
     """Marks this browser session as logged in AND issues a "remember me"
-    token stored in the page URL (?t=...), so a page refresh restores the
+    token stored as a real browser cookie, so a page refresh restores the
     session automatically instead of asking to log in again every time."""
     email = email.strip().lower()
     st.session_state["authenticated"] = True
     st.session_state["user_email"] = email
-    st.query_params["t"] = auth.create_session_token(email)
+    token = auth.create_session_token(email)
+    cookie_manager.set(
+        "session_token", token,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=auth.SESSION_TOKEN_MAX_AGE_DAYS),
+        secure=True, same_site="strict",
+    )
 
 
 def show_login_and_signup() -> bool:
@@ -128,7 +150,7 @@ def show_login_and_signup() -> bool:
 
     if not st.session_state.get("_tried_auto_login"):
         st.session_state["_tried_auto_login"] = True
-        token = st.query_params.get("t")
+        token = cookie_manager.get("session_token")
         if token:
             email = auth.verify_session_token(token)
             if email:
@@ -136,7 +158,7 @@ def show_login_and_signup() -> bool:
                 st.session_state["user_email"] = email
                 return True
             # Stale/invalid token -- drop it so we don't keep re-checking it.
-            del st.query_params["t"]
+            cookie_manager.delete("session_token")
 
     st.title("📚 متخصص أبحاث")
     login_tab, signup_tab = st.tabs(["تسجيل الدخول", "إنشاء حساب جديد"])
@@ -546,6 +568,7 @@ with st.sidebar:
     st.divider()
     if st.button("تسجيل الخروج", use_container_width=True):
         auth.clear_session_token(st.session_state["user_email"])
+        cookie_manager.delete("session_token")
         st.query_params.clear()
         st.session_state.clear()
         st.rerun()

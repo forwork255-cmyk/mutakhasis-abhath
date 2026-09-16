@@ -3,3 +3,4 @@ streamlit>=1.62.0
 firebase-admin>=7.5.0
 bcrypt>=5.0.0
 sentry-sdk>=2.68.1
+extra-streamlit-components>=0.1.81

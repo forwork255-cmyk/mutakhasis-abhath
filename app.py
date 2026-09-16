@@ -258,9 +258,12 @@ def check_pending_wayl_payment(show_pending_message: bool = False) -> None:
     # Confirm against Wayl's own status field. Exact value spelling not
     # fully confirmed against every possible real response (see
     # wayl_client.py) -- checked case-insensitively against the most likely
-    # candidates. Update this list if a real sandbox payment comes back
-    # with a status string outside this set.
-    raw_status = str(status.get("status", "")).strip().lower()
+    # candidates, and also checked one level down under "data" in case this
+    # endpoint wraps its fields the same way link-creation does (data.url).
+    # Update this list if a real sandbox payment comes back with a status
+    # string outside this set.
+    flat = status.get("data", status) if isinstance(status.get("data"), dict) else status
+    raw_status = str(flat.get("status") or flat.get("paymentStatus") or "").strip().lower()
     if raw_status in ("paid", "completed", "success", "successful"):
         try:
             auth.grant_subscription(email, auth.SUBSCRIPTION_DAYS, plan=pending["plan"])
@@ -270,6 +273,11 @@ def check_pending_wayl_payment(show_pending_message: bool = False) -> None:
             st.error(str(e))
     elif show_pending_message:
         st.info(f"حالة الدفع الحالية: {raw_status or 'غير معروفة'}. إذا أتممت الدفع للتو، انتظر لحظة ثم حاول مرة أخرى.")
+        # TEMPORARY, remove once a real sandbox payment has confirmed the
+        # exact status field/value -- shows the raw Wayl response so it can
+        # be read directly instead of guessing at field names again.
+        with st.expander("🔧 تفاصيل تقنية (مؤقت، للتشخيص)"):
+            st.json(status)
 
 
 if st.query_params.get("reset_token"):

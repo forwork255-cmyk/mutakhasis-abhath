@@ -483,6 +483,35 @@ with st.sidebar:
                 if auth.get_pending_wayl_payment(st.session_state["user_email"]) and st.button("تحقق من الدفع", key="wayl_manual_check"):
                     check_pending_wayl_payment(show_pending_message=True)
 
+    # Self-service cancellation -- shown only to an already-subscribed,
+    # non-owner account. Two-click confirm, same pattern as deleting a
+    # history entry, since this is a real destructive action (ends paid
+    # access immediately -- see auth.revoke_subscription).
+    elif _account_for_sub and auth.is_subscribed(_account_for_sub) and not is_owner():
+        st.divider()
+        with st.expander("💳 الاشتراك"):
+            until = _account_for_sub["subscribed_until"].strftime("%Y-%m-%d")
+            st.caption(f"اشتراكك ({_account_for_sub.get('plan', 'normal')}) فعّال حتى {until}.")
+            if st.session_state.get("_confirm_cancel_sub"):
+                col_confirm, col_cancel = st.columns(2)
+                with col_confirm:
+                    if st.button("تأكيد الإلغاء", key="cancel_sub_confirm", use_container_width=True):
+                        try:
+                            auth.revoke_subscription(st.session_state["user_email"])
+                            st.session_state.pop("_confirm_cancel_sub", None)
+                            st.success("تم إلغاء الاشتراك.")
+                            st.rerun()
+                        except auth.AuthError as e:
+                            st.error(str(e))
+                with col_cancel:
+                    if st.button("تراجع", key="cancel_sub_cancel", use_container_width=True):
+                        st.session_state.pop("_confirm_cancel_sub", None)
+                        st.rerun()
+            else:
+                if st.button("إلغاء الاشتراك", key="cancel_sub_start"):
+                    st.session_state["_confirm_cancel_sub"] = True
+                    st.rerun()
+
     # Owner-only panel: manually grant subscription access to an account
     # after the owner has received payment outside the app (bank transfer,
     # cash, etc.) -- the same model as reselling a shared subscription seat.
@@ -502,6 +531,15 @@ with st.sidebar:
                 try:
                     auth.grant_subscription(grant_email, int(grant_days), plan=grant_plan)
                     st.success(f"تم منح الاشتراك ({grant_plan}) لـ {grant_email.strip().lower()}.")
+                except auth.AuthError as e:
+                    st.error(str(e))
+
+            st.divider()
+            revoke_email = st.text_input("البريد الإلكتروني لإلغاء اشتراكه", key="revoke_email")
+            if st.button("إلغاء الاشتراك", key="revoke_button"):
+                try:
+                    auth.revoke_subscription(revoke_email)
+                    st.success(f"تم إلغاء اشتراك {revoke_email.strip().lower()} فوراً.")
                 except auth.AuthError as e:
                     st.error(str(e))
 

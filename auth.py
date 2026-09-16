@@ -357,6 +357,22 @@ def grant_subscription(email: str, days: int, plan: str = "normal") -> None:
     }, merge=True)
 
 
+def revoke_subscription(email: str) -> None:
+    """Ends a subscription immediately (refund, mistaken grant, abuse, or a
+    subscriber cancelling their own plan). Sets subscribed_until to right
+    now rather than clearing it, so is_subscribed() -- which just checks
+    "until > now" -- correctly reports False on the very next check with no
+    separate code path needed. Does not touch subscription_used/plan, so
+    reactivating later (grant_subscription) still starts a clean period."""
+    email = email.strip().lower()
+    account = get_account(email)
+    if account is None:
+        raise AuthError("لا يوجد حساب بهذا البريد الإلكتروني.")
+    _accounts().document(email).set({
+        "subscribed_until": datetime.now(timezone.utc),
+    }, merge=True)
+
+
 def set_pending_wayl_payment(email: str, reference_id: str, plan: str) -> None:
     """
     Records a Wayl checkout that was just started, BEFORE the user is sent

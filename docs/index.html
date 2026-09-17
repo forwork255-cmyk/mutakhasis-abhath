@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>متخصص أبحاث — مساعد بحث أكاديمي بالعربي بمصادر حقيقية</title>
+<meta name="description" content="اكتب سؤالك البحثي بالعربية، واحصل على تحليل مبني على دراسات أكاديمية حقيقية من OpenAlex، مع استشهادات موثوقة يمكنك التحقق منها — بدل إجابات ذكاء اصطناعي بلا مصادر.">
+<style>
+  :root {
+    --primary: #1B4B43;
+    --primary-light: #256356;
+    --bg: #FAF9F6;
+    --bg-alt: #F0EDE6;
+    --text: #1A1A1A;
+    --text-muted: #5A5A54;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Tahoma, "Segoe UI", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+  header.hero {
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: var(--bg);
+    padding: 64px 0 56px;
+    text-align: center;
+  }
+  header.hero h1 { font-size: 2.4rem; margin: 0 0 8px; }
+  header.hero .tagline { font-size: 1.25rem; opacity: 0.95; margin: 0 0 20px; }
+  header.hero .sub { max-width: 560px; margin: 0 auto 32px; opacity: 0.9; font-size: 1rem; }
+  .cta {
+    display: inline-block;
+    background: var(--bg);
+    color: var(--primary);
+    font-weight: bold;
+    padding: 14px 36px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 1.1rem;
+  }
+  .cta:hover { opacity: 0.9; }
+  section { padding: 48px 0; }
+  section h2 { font-size: 1.6rem; text-align: center; margin-bottom: 28px; }
+  .compare {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .compare > div {
+    flex: 1 1 260px;
+    background: var(--bg-alt);
+    border-radius: 10px;
+    padding: 22px;
+  }
+  .compare .bad { border-inline-start: 4px solid #B4453A; }
+  .compare .good { border-inline-start: 4px solid var(--primary); }
+  .compare h3 { margin-top: 0; }
+  ul.features { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+  ul.features li {
+    background: var(--bg-alt);
+    border-radius: 8px;
+    padding: 16px 20px;
+  }
+  .pricing { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+  .plan {
+    background: var(--bg-alt);
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    flex: 1 1 200px;
+    max-width: 240px;
+  }
+  .plan .price { font-size: 1.6rem; font-weight: bold; color: var(--primary); margin: 8px 0; }
+  .plan.free { border: 2px solid var(--primary); }
+  section.final-cta { text-align: center; background: var(--bg-alt); }
+  section.final-cta .cta { background: var(--primary); color: var(--bg); }
+  footer {
+    text-align: center;
+    padding: 32px 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+  footer a { color: var(--primary); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>📚 متخصص أبحاث</h1>
+    <p class="tagline">ابحث بالعربي، استشهد بمصادر حقيقية</p>
+    <p class="sub">اكتب سؤالك الأكاديمي بالعربية، ودع النظام يبحث في دراسات حقيقية، يلخّص الأدلة، ويعطيك مصادر يمكنك التحقق منها فعلاً — لا إجابات بلا استشهادات.</p>
+    <a class="cta" href="https://mutakhasis-abhath.streamlit.app/">جرّب الآن مجاناً</a>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>الفرق الحقيقي</h2>
+    <div class="compare">
+      <div class="bad">
+        <h3>روبوت محادثة عام</h3>
+        <p>يجيب عن سؤالك الأكاديمي، لكن غالباً بلا مصادر حقيقية يمكن التحقق منها — وأحياناً بمعلومات غير دقيقة تبدو مقنعة.</p>
+      </div>
+      <div class="good">
+        <h3>متخصص أبحاث</h3>
+        <p>يبحث فعلياً في قاعدة بيانات أكاديمية حقيقية (OpenAlex)، ويربط كل ادعاء مهم بدراسة حقيقية يمكنك فتحها والتحقق منها بنفسك.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="background: var(--bg-alt);">
+  <div class="wrap">
+    <h2>ماذا يقدّم لك؟</h2>
+    <ul class="features">
+      <li>🔍 بحث حقيقي في دراسات أكاديمية بالعربية والإنجليزية عبر OpenAlex</li>
+      <li>📊 تلخيص الأدلة، مع تحديد نقاط الاتفاق والاختلاف والفجوات البحثية</li>
+      <li>💬 أسئلة متابعة مبنية على نفس الأدلة التي تم استرجاعها فعلاً</li>
+      <li>📄 تحليل ورقة بحثية واحدة تقوم برفعها مباشرة (PDF)</li>
+      <li>✍️ مساعدة في كتابة فقرات أكاديمية مبنية على المصادر المسترجعة فقط</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>الأسعار</h2>
+    <div class="pricing">
+      <div class="plan free">
+        <h3>مجاني</h3>
+        <div class="price">0</div>
+        <p>5 بحوث يومياً</p>
+      </div>
+      <div class="plan">
+        <h3>عادي</h3>
+        <div class="price">6,000 د.ع</div>
+        <p>شهرياً</p>
+      </div>
+      <div class="plan">
+        <h3>متقدم</h3>
+        <div class="price">7,000 د.ع</div>
+        <p>شهرياً</p>
+      </div>
+      <div class="plan">
+        <h3>أقصى</h3>
+        <div class="price">8,500 د.ع</div>
+        <p>شهرياً</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final-cta">
+  <div class="wrap">
+    <h2>جرّب متخصص أبحاث الآن</h2>
+    <a class="cta" href="https://mutakhasis-abhath.streamlit.app/">ابدأ مجاناً</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      تواصل معنا: <a href="mailto:forwork255@gmail.com">forwork255@gmail.com</a>
+      &nbsp;•&nbsp;
+      <a href="https://www.instagram.com/mutakhasis.abhath/">إنستغرام</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
